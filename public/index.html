@@ -1,0 +1,462 @@
+﻿<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TypeArena PvP — Ranked & Juice Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        /* Getar tajam saat salah ketik */
+        @keyframes errorShake {
+            0%, 100% { transform: translateX(0); }
+            15% { transform: translateX(-8px) rotate(-0.5deg); }
+            30% { transform: translateX(8px) rotate(0.5deg); }
+            45% { transform: translateX(-6px); }
+            60% { transform: translateX(6px); }
+            75% { transform: translateX(-3px); }
+        }
+        .animate-error-shake {
+            animation: errorShake 0.28s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+            border-color: rgba(244, 63, 94, 0.8) !important;
+            box-shadow: 0 0 20px rgba(244, 63, 94, 0.25);
+        }
+
+        /* Getar hentakan saat mencapai kelipatan combo (10x, 20x, 30x...) */
+        @keyframes comboThump {
+            0%, 100% { transform: scale(1) translateY(0); }
+            25% { transform: scale(1.015) translateY(-4px); }
+            50% { transform: scale(0.992) translateY(2px); }
+            75% { transform: scale(1.005) translateY(-1px); }
+        }
+        .animate-combo-thump {
+            animation: comboThump 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+            border-color: rgba(251, 191, 36, 0.7) !important;
+            box-shadow: 0 0 30px rgba(251, 191, 36, 0.25);
+        }
+
+        /* Lonjakan angka combo setiap ketikan benar */
+        @keyframes comboPop {
+            0% { transform: scale(1.45); color: #fde047; }
+            100% { transform: scale(1); }
+        }
+        .animate-combo-pop {
+            display: inline-block;
+            animation: comboPop 0.18s ease-out;
+        }
+
+        /* Teks melayang (+STREAK!) */
+        @keyframes floatUp {
+            0% { opacity: 1; transform: translateY(0) scale(0.9); }
+            100% { opacity: 0; transform: translateY(-28px) scale(1.15); }
+        }
+        .float-streak {
+            animation: floatUp 0.75s ease-out forwards;
+        }
+
+        @keyframes pulseCaret {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.2; }
+        }
+        .caret {
+            transition: left 0.08s ease-out, top 0.08s ease-out;
+            animation: pulseCaret 1s infinite;
+        }
+        .bar-smooth { transition: width 0.25s cubic-bezier(0.22, 1, 0.36, 1); }
+        .racer-smooth { transition: left 0.25s cubic-bezier(0.22, 1, 0.36, 1); }
+        @keyframes popIn {
+            0% { transform: scale(0.92); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .pop-in { animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4 select-none overflow-x-hidden">
+
+    <div id="mainCard" class="max-w-2xl w-full bg-slate-900/95 backdrop-blur p-6 rounded-3xl border border-slate-800 shadow-2xl space-y-5 transition-colors duration-200">
+        
+        <!-- HEADER & KARTU PROFIL PEMAIN -->
+        <div class="flex flex-wrap justify-between items-center gap-4 border-b border-slate-800 pb-4">
+            <div>
+                <h1 class="text-2xl font-black bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">TypeArena PvP</h1>
+                <p class="text-xs text-slate-400">Ranked Competitive Typing Battle</p>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <button id="sndBtn" onclick="toggleSound()" class="bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-xl text-xs transition" title="Toggle Suara">🔊</button>
+                
+                <div onclick="openProfileModal()" class="flex items-center gap-3 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 px-3.5 py-2 rounded-2xl cursor-pointer transition group">
+                    <div id="headerAvatar" class="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-xl overflow-hidden border border-amber-500/40">🦊</div>
+                    <div class="text-left">
+                        <div class="flex items-center gap-1.5">
+                            <span id="headerName" class="font-bold text-sm text-slate-100 group-hover:text-amber-400 transition">Pemain</span>
+                            <span id="headerRankBadge" class="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300">GOLD</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+                            <span>Lv.<b id="headerLevel" class="text-slate-200">1</b></span>
+                            <span>•</span>
+                            <span><b id="headerMMR" class="text-emerald-400">1000</b> MMR</span>
+                        </div>
+                        <div class="w-28 bg-slate-950 h-1.5 rounded-full mt-1 overflow-hidden">
+                            <div id="headerXPBar" class="bg-gradient-to-r from-amber-400 to-orange-500 h-full transition-all" style="width: 20%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- LOBBY VIEW -->
+        <div id="lobby" class="space-y-4 pop-in">
+            <button id="qmBtn" onclick="startQuickMatch()" class="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black py-4 rounded-2xl shadow-lg shadow-emerald-500/20 transition transform active:scale-95 flex items-center justify-center gap-2 text-base">
+                ⚡ QUICK MATCH (CARI LAWAN OTOMATIS)
+            </button>
+
+            <div id="searchingBox" class="hidden bg-slate-800/80 border border-emerald-500/30 p-4 rounded-2xl text-center space-y-2">
+                <div class="text-sm font-bold text-emerald-400 animate-pulse">🔍 Sedang mencari lawan yang sepadan...</div>
+                <button onclick="cancelQuickMatch()" class="text-xs text-slate-400 hover:text-rose-400 underline">Batalkan Pencarian</button>
+            </div>
+
+            <div class="relative flex py-1 items-center">
+                <div class="flex-grow border-t border-slate-800"></div>
+                <span class="flex-shrink mx-3 text-xs text-slate-500 uppercase font-semibold">Atau Main Bareng Teman</span>
+                <div class="flex-grow border-t border-slate-800"></div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button onclick="cRoom()" class="bg-slate-800 hover:bg-slate-750 border border-slate-700 hover:border-amber-500/50 text-amber-400 font-bold py-3 rounded-2xl transition">
+                    + Buat Custom Room
+                </button>
+                <div class="flex gap-2">
+                    <input id="rc" maxlength="4" placeholder="KODE" class="w-24 bg-slate-800 border border-slate-700 focus:border-indigo-400 outline-none px-3 py-3 rounded-2xl uppercase font-mono text-center tracking-widest text-sm">
+                    <button onclick="jRoom()" class="flex-1 bg-indigo-600 hover:bg-indigo-500 px-4 py-3 rounded-2xl font-bold text-sm transition">Gabung</button>
+                </div>
+            </div>
+            <p id="err" class="text-rose-400 text-sm text-center"></p>
+        </div>
+
+        <!-- ARENA VIEW -->
+        <div id="arena" class="hidden space-y-5 pop-in">
+            <div class="flex justify-between items-center bg-slate-800/80 px-4 py-3 rounded-2xl border border-slate-700/60">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-slate-400">ROOM:</span>
+                    <b id="dCode" class="text-amber-400 font-mono text-xl tracking-widest"></b>
+                </div>
+                <span id="st" class="text-xs font-bold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400">Menunggu lawan...</span>
+            </div>
+
+            <div id="tracks" class="space-y-3"></div>
+
+            <button id="rBtn" onclick="rdy()" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3.5 rounded-2xl shadow-lg shadow-emerald-500/20 transition transform active:scale-95">
+                ⚡ SAYA SIAP! (READY)
+            </button>
+
+            <!-- Kotak Teks Mengetik -->
+            <div id="tBox" class="hidden space-y-3 pop-in">
+                <div class="relative flex justify-between items-center text-xs text-slate-400 px-1">
+                    <div class="flex items-center gap-2">
+                        <span>Combo:</span>
+                        <b id="cmb" class="text-amber-400 text-sm font-black">0x</b>
+                        <span id="streakPopup" class="pointer-events-none font-black text-amber-300 text-xs"></span>
+                    </div>
+                    <span id="feedbackHint">Ketik secepat & seakurat mungkin</span>
+                </div>
+                <div id="txtWrap" class="relative bg-slate-950 p-5 rounded-2xl border-2 border-slate-800 font-mono text-lg sm:text-xl leading-relaxed tracking-wide overflow-hidden transition-colors duration-150">
+                    <div id="caret" class="caret absolute w-0.5 h-6 bg-amber-400 rounded-full pointer-events-none"></div>
+                    <div id="txt" class="whitespace-pre-wrap break-words"></div>
+                </div>
+                <input id="inp" disabled autocomplete="off" class="w-full bg-slate-800 border-2 border-slate-700 focus:border-amber-400 outline-none p-3.5 rounded-2xl font-mono text-lg transition" placeholder="Tunggu hitungan mundur...">
+            </div>
+
+            <!-- Hasil Pertandingan -->
+            <div id="res" class="hidden bg-slate-800/90 border border-amber-500/40 p-6 rounded-2xl text-center space-y-3 pop-in">
+                <h2 id="rTitle" class="text-3xl font-black text-amber-400"></h2>
+                <div id="rRewards" class="text-xs font-bold text-emerald-400"></div>
+                <div id="rDet" class="text-sm text-slate-300 space-y-1.5 pt-2"></div>
+                <button onclick="location.reload()" class="mt-3 bg-amber-500 hover:bg-amber-400 text-slate-950 px-6 py-2.5 rounded-xl text-sm font-black transition">Kembali ke Lobby</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL EDIT PROFIL -->
+    <div id="profileModal" class="hidden fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-900 border border-slate-700 max-w-sm w-full rounded-3xl p-6 space-y-4 pop-in">
+            <h3 class="text-lg font-black text-amber-400">Edit Profil Pemain</h3>
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Nickname</label>
+                <input id="editNameInput" type="text" maxlength="15" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm font-bold focus:border-amber-400 outline-none">
+            </div>
+            <div>
+                <label class="text-xs text-slate-400 block mb-1.5">Pilih Avatar atau Upload Foto</label>
+                <div class="grid grid-cols-6 gap-2 mb-3">
+                    <button type="button" onclick="selectEmoji('🦊')" class="bg-slate-800 hover:bg-slate-700 p-2 rounded-xl text-xl">🦊</button>
+                    <button type="button" onclick="selectEmoji('🐉')" class="bg-slate-800 hover:bg-slate-700 p-2 rounded-xl text-xl">🐉</button>
+                    <button type="button" onclick="selectEmoji('🤖')" class="bg-slate-800 hover:bg-slate-700 p-2 rounded-xl text-xl">🤖</button>
+                    <button type="button" onclick="selectEmoji('🥷')" class="bg-slate-800 hover:bg-slate-700 p-2 rounded-xl text-xl">🥷</button>
+                    <button type="button" onclick="selectEmoji('👽')" class="bg-slate-800 hover:bg-slate-700 p-2 rounded-xl text-xl">👽</button>
+                    <button type="button" onclick="selectEmoji('🦁')" class="bg-slate-800 hover:bg-slate-700 p-2 rounded-xl text-xl">🦁</button>
+                </div>
+                <input type="file" id="avatarUpload" accept="image/*" onchange="handlePhotoUpload(event)" class="text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500">
+            </div>
+            <div class="flex gap-2 pt-2">
+                <button onclick="closeProfileModal()" class="flex-1 bg-slate-800 hover:bg-slate-700 py-2.5 rounded-xl text-sm font-bold">Batal</button>
+                <button onclick="saveProfile()" class="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 py-2.5 rounded-xl text-sm font-black">Simpan</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const s = io();
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        let target = '', t0 = 0, combo = 0, sfx = true, prevLen = 0;
+
+        let profile = JSON.parse(localStorage.getItem('ta_profile')) || {
+            name: 'Pemain', avatar: '🦊', xp: 0, level: 1, mmr: 1000
+        };
+        let tempAvatar = profile.avatar;
+
+        function getRankInfo(mmr) {
+            if (mmr < 900) return { title: 'BRONZE', color: 'bg-orange-900/40 text-orange-300' };
+            if (mmr < 1100) return { title: 'SILVER', color: 'bg-slate-600/40 text-slate-200' };
+            if (mmr < 1300) return { title: 'GOLD', color: 'bg-amber-500/20 text-amber-300' };
+            if (mmr < 1500) return { title: 'PLATINUM', color: 'bg-cyan-500/20 text-cyan-300' };
+            if (mmr < 1750) return { title: 'DIAMOND', color: 'bg-indigo-500/20 text-indigo-300' };
+            return { title: 'GRANDMASTER', color: 'bg-rose-500/20 text-rose-300' };
+        }
+
+        function renderAvatarHTML(av) {
+            return av.startsWith('data:image') ? `<img src="${av}" class="w-full h-full object-cover">` : av;
+        }
+
+        function updateProfileUI() {
+            const rank = getRankInfo(profile.mmr);
+            const xpNeeded = profile.level * 200;
+            const xpPercent = Math.min(100, Math.round((profile.xp / xpNeeded) * 100));
+
+            headerName.innerText = profile.name;
+            headerAvatar.innerHTML = renderAvatarHTML(profile.avatar);
+            headerLevel.innerText = profile.level;
+            headerMMR.innerText = profile.mmr;
+            headerRankBadge.innerText = rank.title;
+            headerRankBadge.className = `text-[10px] font-black px-2 py-0.5 rounded-full ${rank.color}`;
+            headerXPBar.style.width = xpPercent + '%';
+            localStorage.setItem('ta_profile', JSON.stringify(profile));
+        }
+        updateProfileUI();
+
+        function openProfileModal() { editNameInput.value = profile.name; tempAvatar = profile.avatar; profileModal.classList.remove('hidden'); }
+        function closeProfileModal() { profileModal.classList.add('hidden'); }
+        function selectEmoji(em) { tempAvatar = em; }
+        function handlePhotoUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 64; canvas.height = 64;
+                    canvas.getContext('2d').drawImage(img, 0, 0, 64, 64);
+                    tempAvatar = canvas.toDataURL('image/jpeg', 0.7);
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+        function saveProfile() {
+            profile.name = editNameInput.value.trim() || 'Pemain';
+            profile.avatar = tempAvatar;
+            updateProfileUI();
+            closeProfileModal();
+        }
+
+        const toggleSound = () => { sfx = !sfx; sndBtn.innerText = sfx ? '🔊' : '🔇'; };
+        const playClick = (type = 'normal') => {
+            if (!sfx) return;
+            if (ctx.state === 'suspended') ctx.resume();
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            if (type === 'error') {
+                o.type = 'sawtooth'; o.frequency.value = 135;
+                g.gain.setValueAtTime(0.08, ctx.currentTime);
+            } else if (type === 'milestone') {
+                o.type = 'sine'; o.frequency.setValueAtTime(600, ctx.currentTime);
+                o.frequency.exponentialRampToValueAtTime(980, ctx.currentTime + 0.12);
+                g.gain.setValueAtTime(0.09, ctx.currentTime);
+            } else {
+                o.type = 'triangle'; o.frequency.value = 520 + Math.min(combo * 8, 320);
+                g.gain.setValueAtTime(0.05, ctx.currentTime);
+            }
+            g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+            o.connect(g); g.connect(ctx.destination);
+            o.start(); o.stop(ctx.currentTime + 0.12);
+        };
+
+        // Fungsi pemicu animasi getar & pop
+        function triggerJuice(isError, currentCombo) {
+            if (isError) {
+                txtWrap.classList.remove('animate-error-shake');
+                void txtWrap.offsetWidth;
+                txtWrap.classList.add('animate-error-shake');
+                feedbackHint.innerHTML = '<span class="text-rose-400 font-bold">⚠️ Typo! Perbaiki huruf merah</span>';
+            } else {
+                feedbackHint.innerText = 'Ketik secepat & seakurat mungkin';
+                // Angka combo membesar tiap ketikan benar
+                cmb.classList.remove('animate-combo-pop');
+                void cmb.offsetWidth;
+                cmb.classList.add('animate-combo-pop');
+
+                // Setiap kelipatan 10 combo -> Getar hentakan pada kartu utama + efek streak!
+                if (currentCombo > 0 && currentCombo % 10 === 0) {
+                    mainCard.classList.remove('animate-combo-thump');
+                    void mainCard.offsetWidth;
+                    mainCard.classList.add('animate-combo-thump');
+
+                    streakPopup.innerHTML = `<span class="float-streak inline-block">🔥 ${currentCombo}x STREAK!</span>`;
+                    playClick('milestone');
+                }
+            }
+        }
+
+        const cRoom = () => s.emit('createRoom', profile);
+        const jRoom = () => s.emit('joinRoom', { roomCode: rc.value, playerData: profile });
+        const startQuickMatch = () => s.emit('quickMatch', profile);
+        const cancelQuickMatch = () => { s.emit('cancelQuickMatch'); searchingBox.classList.add('hidden'); qmBtn.classList.remove('hidden'); };
+        const rdy = () => { rBtn.disabled = true; rBtn.innerText = '⏳ Menunggu lawan...'; rBtn.classList.add('opacity-60'); s.emit('playerReady'); };
+
+        s.on('searchingMatch', () => { qmBtn.classList.add('hidden'); searchingBox.classList.remove('hidden'); });
+        s.on('errorMsg', m => err.innerText = m);
+
+        s.on('roomUpdate', r => {
+            lobby.classList.add('hidden');
+            arena.classList.remove('hidden');
+            dCode.innerText = r.code;
+            st.innerText = Object.keys(r.players).length < 2 ? 'Menunggu 1 pemain...' : 'Lawan siap! Klik Ready';
+            draw(r.players);
+        });
+
+        const draw = pl => {
+            tracks.innerHTML = Object.values(pl).map(p => {
+                const me = p.id === s.id;
+                const rank = getRankInfo(p.mmr || 1000);
+                return `
+                <div class="bg-slate-800/70 p-3.5 rounded-2xl border ${me ? 'border-amber-500/40' : 'border-slate-700/60'}">
+                    <div class="flex justify-between items-center text-xs mb-2.5">
+                        <div class="flex items-center gap-2">
+                            <div class="w-7 h-7 rounded-lg bg-slate-900 flex items-center justify-center text-sm overflow-hidden border border-slate-700">
+                                ${renderAvatarHTML(p.avatar || '🦊')}
+                            </div>
+                            <div>
+                                <span class="font-bold ${me ? 'text-amber-400' : 'text-indigo-400'}">${p.name}${me ? ' (Kamu)' : ''}</span>
+                                <span class="ml-1 text-[10px] px-1.5 py-0.5 rounded ${rank.color} font-bold">${rank.title}</span>
+                                <div class="text-[10px] text-slate-400">Lv.${p.level || 1} • ${p.mmr || 1000} MMR</div>
+                            </div>
+                        </div>
+                        <span class="font-mono font-bold">${p.wpm} WPM • ${p.progress}% ${p.ready ? '✅' : '⏳'}</span>
+                    </div>
+                    <div class="relative w-full bg-slate-950 h-3 rounded-full overflow-visible">
+                        <div class="bar-smooth ${me ? 'bg-gradient-to-r from-amber-500 to-orange-400' : 'bg-gradient-to-r from-indigo-500 to-cyan-400'} h-3 rounded-full" style="width:${p.progress}%"></div>
+                        <span class="racer-smooth absolute -top-2.5 text-base" style="left:calc(${Math.min(p.progress, 95)}%)">${me ? '🏎️' : '🚙'}</span>
+                        <span class="absolute -top-2.5 right-0 text-sm">🏁</span>
+                    </div>
+                </div>`;
+            }).join('');
+        };
+
+        const renderText = (val) => {
+            let html = '';
+            for (let i = 0; i < target.length; i++) {
+                const ch = target[i];
+                if (i < val.length) {
+                    html += val[i] === target[i]
+                        ? `<span class="text-emerald-400">${ch}</span>`
+                        : `<span class="bg-rose-500/40 text-rose-200 rounded">${ch}</span>`;
+                } else {
+                    html += `<span class="text-slate-500" data-idx="${i}">${ch}</span>`;
+                }
+            }
+            txt.innerHTML = html;
+            const nextEl = txt.querySelector(`[data-idx="${val.length}"]`);
+            if (nextEl) {
+                caret.style.left = nextEl.offsetLeft + 'px';
+                caret.style.top = nextEl.offsetTop + 'px';
+            }
+        };
+
+        s.on('startCountdown', t => {
+            target = t;
+            rBtn.classList.add('hidden');
+            tBox.classList.remove('hidden');
+            renderText('');
+            let c = 3;
+            st.innerText = 'Mulai dalam ' + c + '...';
+            const iv = setInterval(() => {
+                c--;
+                if (c > 0) st.innerText = 'Mulai dalam ' + c + '...';
+                else clearInterval(iv);
+            }, 1000);
+        });
+
+        s.on('raceStarted', () => {
+            st.innerText = '🔥 BALAPAN DIMULAI!';
+            inp.disabled = false;
+            inp.focus();
+            t0 = Date.now();
+        });
+
+        inp.oninput = () => {
+            const val = inp.value;
+            renderText(val);
+            let ok = 0;
+            for (let i = 0; i < val.length; i++) {
+                if (val[i] === target[i]) ok++;
+                else break;
+            }
+            const hasErr = val.length > ok;
+            const isAddingChar = val.length > prevLen;
+            prevLen = val.length;
+
+            if (hasErr) {
+                combo = 0;
+                if (isAddingChar) {
+                    playClick('error');
+                    triggerJuice(true, 0);
+                }
+            } else if (isAddingChar) {
+                combo++;
+                if (combo % 10 !== 0) playClick('normal');
+                triggerJuice(false, combo);
+            }
+
+            cmb.innerText = combo + 'x';
+            const prog = Math.floor((ok / target.length) * 100);
+            const min = (Date.now() - t0) / 60000;
+            const wpm = min > 0 ? Math.round((ok / 5) / min) : 0;
+            s.emit('typingProgress', { progress: prog, wpm });
+        };
+
+        s.on('progressUpdate', draw);
+
+        s.on('raceFinished', resData => {
+            inp.disabled = true;
+            res.classList.remove('hidden');
+            const me = resData.find(x => x.id === s.id);
+            if (me) {
+                profile.mmr = Math.max(0, profile.mmr + me.mmrChange);
+                profile.xp += me.xpGained;
+                while (profile.xp >= profile.level * 200) {
+                    profile.xp -= profile.level * 200;
+                    profile.level++;
+                }
+                updateProfileUI();
+                rTitle.innerText = me.isWinner ? '🏆 KAMU MENANG!' : '💀 KALAH TIPIS!';
+                rRewards.innerText = `+${me.xpGained} XP  •  ${me.mmrChange > 0 ? '+' : ''}${me.mmrChange} MMR`;
+            }
+            rDet.innerHTML = resData.map(x => `<div>${x.isWinner ? '🥇 ' : '🥈 '}<b>${x.name}</b> — ${x.wpm} WPM</div>`).join('');
+        });
+
+        s.on('opponentLeft', () => {
+            alert('Lawan keluar dari pertandingan.');
+            location.reload();
+        });
+    </script>
+</body>
+</html>
