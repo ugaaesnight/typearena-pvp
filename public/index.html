@@ -1,462 +1,642 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TypeArena PvP — Ranked & Juice Edition</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="/socket.io/socket.io.js"></script>
-    <style>
-        /* Getar tajam saat salah ketik */
-        @keyframes errorShake {
-            0%, 100% { transform: translateX(0); }
-            15% { transform: translateX(-8px) rotate(-0.5deg); }
-            30% { transform: translateX(8px) rotate(0.5deg); }
-            45% { transform: translateX(-6px); }
-            60% { transform: translateX(6px); }
-            75% { transform: translateX(-3px); }
-        }
-        .animate-error-shake {
-            animation: errorShake 0.28s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
-            border-color: rgba(244, 63, 94, 0.8) !important;
-            box-shadow: 0 0 20px rgba(244, 63, 94, 0.25);
-        }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TypeArena PvP — Real-Time Typing Battle</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+    }
 
-        /* Getar hentakan saat mencapai kelipatan combo (10x, 20x, 30x...) */
-        @keyframes comboThump {
-            0%, 100% { transform: scale(1) translateY(0); }
-            25% { transform: scale(1.015) translateY(-4px); }
-            50% { transform: scale(0.992) translateY(2px); }
-            75% { transform: scale(1.005) translateY(-1px); }
-        }
-        .animate-combo-thump {
-            animation: comboThump 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
-            border-color: rgba(251, 191, 36, 0.7) !important;
-            box-shadow: 0 0 30px rgba(251, 191, 36, 0.25);
-        }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
 
-        /* Lonjakan angka combo setiap ketikan benar */
-        @keyframes comboPop {
-            0% { transform: scale(1.45); color: #fde047; }
-            100% { transform: scale(1); }
-        }
-        .animate-combo-pop {
-            display: inline-block;
-            animation: comboPop 0.18s ease-out;
-        }
+    .container {
+      width: 100%;
+      max-width: 820px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+    }
 
-        /* Teks melayang (+STREAK!) */
-        @keyframes floatUp {
-            0% { opacity: 1; transform: translateY(0) scale(0.9); }
-            100% { opacity: 0; transform: translateY(-28px) scale(1.15); }
-        }
-        .float-streak {
-            animation: floatUp 0.75s ease-out forwards;
-        }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
 
-        @keyframes pulseCaret {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.2; }
-        }
-        .caret {
-            transition: left 0.08s ease-out, top 0.08s ease-out;
-            animation: pulseCaret 1s infinite;
-        }
-        .bar-smooth { transition: width 0.25s cubic-bezier(0.22, 1, 0.36, 1); }
-        .racer-smooth { transition: left 0.25s cubic-bezier(0.22, 1, 0.36, 1); }
-        @keyframes popIn {
-            0% { transform: scale(0.92); opacity: 0; }
-            100% { transform: scale(1); opacity: 1; }
-        }
-        .pop-in { animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-    </style>
+    header h1 { font-size: 1.5rem; letter-spacing: 0.5px; }
+    header h1 span { color: var(--accent); }
+
+    .status-badge {
+      font-size: 0.85rem;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    /* Lobby */
+    .form-group { margin-bottom: 16px; }
+    label { display: block; font-size: 0.9rem; color: var(--muted); margin-bottom: 6px; }
+    input[type="text"] {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+    }
+    input[type="text"]:focus { border-color: var(--accent); }
+
+    .btn-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    button {
+      padding: 12px 18px;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    .btn-primary { background: var(--accent); color: #0f172a; }
+    .btn-primary:hover { background: var(--accent-hover); color: #fff; }
+    .btn-secondary { background: var(--border); color: var(--text); }
+    .btn-secondary:hover { background: #475569; }
+    .btn-danger { background: var(--danger); color: #fff; }
+
+    .room-box {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+    }
+
+    /* Waiting */
+    .waiting-box { text-align: center; padding: 30px 10px; }
+    .room-code-display {
+      display: inline-block;
+      margin: 14px 0;
+      padding: 10px 22px;
+      background: var(--bg);
+      border: 1px dashed var(--accent);
+      border-radius: 10px;
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 3px;
+      color: var(--accent);
+    }
+
+    /* Arena */
+    .players-bar {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .player-card {
+      background: var(--bg);
+      padding: 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .player-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 10px;
+      background: var(--border);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      transition: width 0.15s ease;
+    }
+    .progress-fill.enemy { background: var(--warning); }
+
+    .countdown-banner {
+      text-align: center;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--warning);
+      margin-bottom: 12px;
+      min-height: 30px;
+    }
+
+    .text-display {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      font-size: 1.25rem;
+      line-height: 1.8;
+      letter-spacing: 0.4px;
+      margin-bottom: 16px;
+      user-select: none;
+      transition: filter 0.2s;
+    }
+
+    .text-display.blinded {
+      filter: blur(5px);
+    }
+
+    .char-correct { color: var(--success); }
+    .char-wrong { color: var(--danger); background: rgba(239, 68, 68, 0.2); border-radius: 3px; }
+    .char-current { border-bottom: 2px solid var(--accent); }
+
+    .typing-input {
+      width: 100%;
+      padding: 14px;
+      font-size: 1.1rem;
+      border-radius: 10px;
+      border: 2px solid var(--accent);
+      background: var(--bg);
+      color: var(--text);
+      outline: none;
+    }
+    .typing-input:disabled { opacity: 0.5; border-color: var(--border); }
+
+    .attack-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 14px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    /* Result */
+    .result-box { text-align: center; padding: 20px 0; }
+    .result-title { font-size: 2rem; margin-bottom: 10px; }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin: 20px 0;
+    }
+    .stat-card {
+      background: var(--bg);
+      padding: 16px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+  </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4 select-none overflow-x-hidden">
+<body>
+  <div class="container">
+    <header>
+      <h1>Type<span>Arena</span> PvP</h1>
+      <div class="status-badge" id="connStatus">Terhubung ke Server</div>
+    </header>
 
-    <div id="mainCard" class="max-w-2xl w-full bg-slate-900/95 backdrop-blur p-6 rounded-3xl border border-slate-800 shadow-2xl space-y-5 transition-colors duration-200">
-        
-        <!-- HEADER & KARTU PROFIL PEMAIN -->
-        <div class="flex flex-wrap justify-between items-center gap-4 border-b border-slate-800 pb-4">
-            <div>
-                <h1 class="text-2xl font-black bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">TypeArena PvP</h1>
-                <p class="text-xs text-slate-400">Ranked Competitive Typing Battle</p>
-            </div>
+    <!-- LOBBY SCREEN -->
+    <div id="lobbyScreen" class="screen active">
+      <div class="form-group">
+        <label for="playerName">Nama Pemain</label>
+        <input type="text" id="playerName" placeholder="Masukkan nickname kamu..." maxlength="16" />
+      </div>
 
-            <div class="flex items-center gap-3">
-                <button id="sndBtn" onclick="toggleSound()" class="bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-xl text-xs transition" title="Toggle Suara">🔊</button>
-                
-                <div onclick="openProfileModal()" class="flex items-center gap-3 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 px-3.5 py-2 rounded-2xl cursor-pointer transition group">
-                    <div id="headerAvatar" class="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-xl overflow-hidden border border-amber-500/40">🦊</div>
-                    <div class="text-left">
-                        <div class="flex items-center gap-1.5">
-                            <span id="headerName" class="font-bold text-sm text-slate-100 group-hover:text-amber-400 transition">Pemain</span>
-                            <span id="headerRankBadge" class="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300">GOLD</span>
-                        </div>
-                        <div class="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
-                            <span>Lv.<b id="headerLevel" class="text-slate-200">1</b></span>
-                            <span>•</span>
-                            <span><b id="headerMMR" class="text-emerald-400">1000</b> MMR</span>
-                        </div>
-                        <div class="w-28 bg-slate-950 h-1.5 rounded-full mt-1 overflow-hidden">
-                            <div id="headerXPBar" class="bg-gradient-to-r from-amber-400 to-orange-500 h-full transition-all" style="width: 20%"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+      <div class="btn-grid">
+        <button class="btn-primary" id="btnQuickMatch">⚡ Quick Match (Publik)</button>
+        <button class="btn-secondary" id="btnCreateRoom">🔒 Buat Room Privat</button>
+      </div>
 
-        <!-- LOBBY VIEW -->
-        <div id="lobby" class="space-y-4 pop-in">
-            <button id="qmBtn" onclick="startQuickMatch()" class="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black py-4 rounded-2xl shadow-lg shadow-emerald-500/20 transition transform active:scale-95 flex items-center justify-center gap-2 text-base">
-                ⚡ QUICK MATCH (CARI LAWAN OTOMATIS)
-            </button>
-
-            <div id="searchingBox" class="hidden bg-slate-800/80 border border-emerald-500/30 p-4 rounded-2xl text-center space-y-2">
-                <div class="text-sm font-bold text-emerald-400 animate-pulse">🔍 Sedang mencari lawan yang sepadan...</div>
-                <button onclick="cancelQuickMatch()" class="text-xs text-slate-400 hover:text-rose-400 underline">Batalkan Pencarian</button>
-            </div>
-
-            <div class="relative flex py-1 items-center">
-                <div class="flex-grow border-t border-slate-800"></div>
-                <span class="flex-shrink mx-3 text-xs text-slate-500 uppercase font-semibold">Atau Main Bareng Teman</span>
-                <div class="flex-grow border-t border-slate-800"></div>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button onclick="cRoom()" class="bg-slate-800 hover:bg-slate-750 border border-slate-700 hover:border-amber-500/50 text-amber-400 font-bold py-3 rounded-2xl transition">
-                    + Buat Custom Room
-                </button>
-                <div class="flex gap-2">
-                    <input id="rc" maxlength="4" placeholder="KODE" class="w-24 bg-slate-800 border border-slate-700 focus:border-indigo-400 outline-none px-3 py-3 rounded-2xl uppercase font-mono text-center tracking-widest text-sm">
-                    <button onclick="jRoom()" class="flex-1 bg-indigo-600 hover:bg-indigo-500 px-4 py-3 rounded-2xl font-bold text-sm transition">Gabung</button>
-                </div>
-            </div>
-            <p id="err" class="text-rose-400 text-sm text-center"></p>
-        </div>
-
-        <!-- ARENA VIEW -->
-        <div id="arena" class="hidden space-y-5 pop-in">
-            <div class="flex justify-between items-center bg-slate-800/80 px-4 py-3 rounded-2xl border border-slate-700/60">
-                <div class="flex items-center gap-2">
-                    <span class="text-xs text-slate-400">ROOM:</span>
-                    <b id="dCode" class="text-amber-400 font-mono text-xl tracking-widest"></b>
-                </div>
-                <span id="st" class="text-xs font-bold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400">Menunggu lawan...</span>
-            </div>
-
-            <div id="tracks" class="space-y-3"></div>
-
-            <button id="rBtn" onclick="rdy()" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3.5 rounded-2xl shadow-lg shadow-emerald-500/20 transition transform active:scale-95">
-                ⚡ SAYA SIAP! (READY)
-            </button>
-
-            <!-- Kotak Teks Mengetik -->
-            <div id="tBox" class="hidden space-y-3 pop-in">
-                <div class="relative flex justify-between items-center text-xs text-slate-400 px-1">
-                    <div class="flex items-center gap-2">
-                        <span>Combo:</span>
-                        <b id="cmb" class="text-amber-400 text-sm font-black">0x</b>
-                        <span id="streakPopup" class="pointer-events-none font-black text-amber-300 text-xs"></span>
-                    </div>
-                    <span id="feedbackHint">Ketik secepat & seakurat mungkin</span>
-                </div>
-                <div id="txtWrap" class="relative bg-slate-950 p-5 rounded-2xl border-2 border-slate-800 font-mono text-lg sm:text-xl leading-relaxed tracking-wide overflow-hidden transition-colors duration-150">
-                    <div id="caret" class="caret absolute w-0.5 h-6 bg-amber-400 rounded-full pointer-events-none"></div>
-                    <div id="txt" class="whitespace-pre-wrap break-words"></div>
-                </div>
-                <input id="inp" disabled autocomplete="off" class="w-full bg-slate-800 border-2 border-slate-700 focus:border-amber-400 outline-none p-3.5 rounded-2xl font-mono text-lg transition" placeholder="Tunggu hitungan mundur...">
-            </div>
-
-            <!-- Hasil Pertandingan -->
-            <div id="res" class="hidden bg-slate-800/90 border border-amber-500/40 p-6 rounded-2xl text-center space-y-3 pop-in">
-                <h2 id="rTitle" class="text-3xl font-black text-amber-400"></h2>
-                <div id="rRewards" class="text-xs font-bold text-emerald-400"></div>
-                <div id="rDet" class="text-sm text-slate-300 space-y-1.5 pt-2"></div>
-                <button onclick="location.reload()" class="mt-3 bg-amber-500 hover:bg-amber-400 text-slate-950 px-6 py-2.5 rounded-xl text-sm font-black transition">Kembali ke Lobby</button>
-            </div>
-        </div>
+      <div class="room-box">
+        <input type="text" id="roomCodeInput" placeholder="Kode Room (misal: AB12)" maxlength="6" style="text-transform: uppercase;" />
+        <button class="btn-secondary" id="btnJoinRoom">Gabung</button>
+      </div>
     </div>
 
-    <!-- MODAL EDIT PROFIL -->
-    <div id="profileModal" class="hidden fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-900 border border-slate-700 max-w-sm w-full rounded-3xl p-6 space-y-4 pop-in">
-            <h3 class="text-lg font-black text-amber-400">Edit Profil Pemain</h3>
-            <div>
-                <label class="text-xs text-slate-400 block mb-1">Nickname</label>
-                <input id="editNameInput" type="text" maxlength="15" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm font-bold focus:border-amber-400 outline-none">
-            </div>
-            <div>
-                <label class="text-xs text-slate-400 block mb-1.5">Pilih Avatar atau Upload Foto</label>
-                <div class="grid grid-cols-6 gap-2 mb-3">
-                    <button type="button" onclick="selectEmoji('🦊')" class="bg-slate-800 hover:bg-slate-700 p-2 rounded-xl text-xl">🦊</button>
-                    <button type="button" onclick="selectEmoji('🐉')" class="bg-slate-800 hover:bg-slate-700 p-2 rounded-xl text-xl">🐉</button>
-                    <button type="button" onclick="selectEmoji('🤖')" class="bg-slate-800 hover:bg-slate-700 p-2 rounded-xl text-xl">🤖</button>
-                    <button type="button" onclick="selectEmoji('🥷')" class="bg-slate-800 hover:bg-slate-700 p-2 rounded-xl text-xl">🥷</button>
-                    <button type="button" onclick="selectEmoji('👽')" class="bg-slate-800 hover:bg-slate-700 p-2 rounded-xl text-xl">👽</button>
-                    <button type="button" onclick="selectEmoji('🦁')" class="bg-slate-800 hover:bg-slate-700 p-2 rounded-xl text-xl">🦁</button>
-                </div>
-                <input type="file" id="avatarUpload" accept="image/*" onchange="handlePhotoUpload(event)" class="text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500">
-            </div>
-            <div class="flex gap-2 pt-2">
-                <button onclick="closeProfileModal()" class="flex-1 bg-slate-800 hover:bg-slate-700 py-2.5 rounded-xl text-sm font-bold">Batal</button>
-                <button onclick="saveProfile()" class="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 py-2.5 rounded-xl text-sm font-black">Simpan</button>
-            </div>
+    <!-- WAITING SCREEN -->
+    <div id="waitingScreen" class="screen">
+      <div class="waiting-box">
+        <h2 id="waitingTitle">Mencari Lawan...</h2>
+        <p style="color: var(--muted); margin-top: 8px;" id="waitingDesc">Menunggu pemain lain bergabung ke arena.</p>
+        <div id="roomCodeWrapper" style="display:none;">
+          <div class="room-code-display" id="displayRoomCode">----</div>
+          <p style="font-size: 0.85rem; color: var(--muted);">Bagikan kode ini ke temanmu untuk mulai duel!</p>
         </div>
+        <button class="btn-danger" id="btnCancelWait" style="margin-top: 24px;">Batal</button>
+      </div>
     </div>
 
-    <script>
-        const s = io();
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        let target = '', t0 = 0, combo = 0, sfx = true, prevLen = 0;
+    <!-- ARENA SCREEN -->
+    <div id="arenaScreen" class="screen">
+      <div class="countdown-banner" id="countdownText">Bersiap...</div>
 
-        let profile = JSON.parse(localStorage.getItem('ta_profile')) || {
-            name: 'Pemain', avatar: '🦊', xp: 0, level: 1, mmr: 1000
-        };
-        let tempAvatar = profile.avatar;
+      <div class="players-bar">
+        <div class="player-card">
+          <div class="player-header">
+            <span id="myNameLabel">Kamu</span>
+            <span id="myStatsLabel">0 WPM • 0%</span>
+          </div>
+          <div class="progress-track"><div class="progress-fill" id="myProgress"></div></div>
+        </div>
+        <div class="player-card">
+          <div class="player-header">
+            <span id="enemyNameLabel">Lawan</span>
+            <span id="enemyStatsLabel">0 WPM • 0%</span>
+          </div>
+          <div class="progress-track"><div class="progress-fill enemy" id="enemyProgress"></div></div>
+        </div>
+      </div>
 
-        function getRankInfo(mmr) {
-            if (mmr < 900) return { title: 'BRONZE', color: 'bg-orange-900/40 text-orange-300' };
-            if (mmr < 1100) return { title: 'SILVER', color: 'bg-slate-600/40 text-slate-200' };
-            if (mmr < 1300) return { title: 'GOLD', color: 'bg-amber-500/20 text-amber-300' };
-            if (mmr < 1500) return { title: 'PLATINUM', color: 'bg-cyan-500/20 text-cyan-300' };
-            if (mmr < 1750) return { title: 'DIAMOND', color: 'bg-indigo-500/20 text-indigo-300' };
-            return { title: 'GRANDMASTER', color: 'bg-rose-500/20 text-rose-300' };
-        }
+      <div class="text-display" id="textDisplay"></div>
+      <input type="text" class="typing-input" id="typingInput" placeholder="Ketik teks di atas setelah hitungan mundur selesai..." disabled autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
 
-        function renderAvatarHTML(av) {
-            return av.startsWith('data:image') ? `<img src="${av}" class="w-full h-full object-cover">` : av;
-        }
+      <div class="attack-bar">
+        <span>💡 Ketik 25 karakter beruntun tanpa salah untuk mengaburkan layar lawan!</span>
+        <span id="streakLabel">Combo: 0/25</span>
+      </div>
+    </div>
 
-        function updateProfileUI() {
-            const rank = getRankInfo(profile.mmr);
-            const xpNeeded = profile.level * 200;
-            const xpPercent = Math.min(100, Math.round((profile.xp / xpNeeded) * 100));
+    <!-- RESULT SCREEN -->
+    <div id="resultScreen" class="screen">
+      <div class="result-box">
+        <div class="result-title" id="resultTitle">🏆 Kamu Menang!</div>
+        <p style="color: var(--muted);" id="resultSubtitle">Pertandingan selesai.</p>
 
-            headerName.innerText = profile.name;
-            headerAvatar.innerHTML = renderAvatarHTML(profile.avatar);
-            headerLevel.innerText = profile.level;
-            headerMMR.innerText = profile.mmr;
-            headerRankBadge.innerText = rank.title;
-            headerRankBadge.className = `text-[10px] font-black px-2 py-0.5 rounded-full ${rank.color}`;
-            headerXPBar.style.width = xpPercent + '%';
-            localStorage.setItem('ta_profile', JSON.stringify(profile));
-        }
-        updateProfileUI();
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div style="color: var(--muted); font-size: 0.85rem;">Kecepatan Kamu</div>
+            <div style="font-size: 1.6rem; font-weight: 700; color: var(--accent);" id="finalMyWpm">0 WPM</div>
+          </div>
+          <div class="stat-card">
+            <div style="color: var(--muted); font-size: 0.85rem;">Kecepatan Lawan</div>
+            <div style="font-size: 1.6rem; font-weight: 700; color: var(--warning);" id="finalEnemyWpm">0 WPM</div>
+          </div>
+        </div>
 
-        function openProfileModal() { editNameInput.value = profile.name; tempAvatar = profile.avatar; profileModal.classList.remove('hidden'); }
-        function closeProfileModal() { profileModal.classList.add('hidden'); }
-        function selectEmoji(em) { tempAvatar = em; }
-        function handlePhotoUpload(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                const img = new Image();
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = 64; canvas.height = 64;
-                    canvas.getContext('2d').drawImage(img, 0, 0, 64, 64);
-                    tempAvatar = canvas.toDataURL('image/jpeg', 0.7);
-                };
-                img.src = ev.target.result;
-            };
-            reader.readAsDataURL(file);
-        }
-        function saveProfile() {
-            profile.name = editNameInput.value.trim() || 'Pemain';
-            profile.avatar = tempAvatar;
-            updateProfileUI();
-            closeProfileModal();
-        }
+        <button class="btn-primary" id="btnBackLobby">Main Lagi</button>
+      </div>
+    </div>
+  </div>
 
-        const toggleSound = () => { sfx = !sfx; sndBtn.innerText = sfx ? '🔊' : '🔇'; };
-        const playClick = (type = 'normal') => {
-            if (!sfx) return;
-            if (ctx.state === 'suspended') ctx.resume();
-            const o = ctx.createOscillator(), g = ctx.createGain();
-            if (type === 'error') {
-                o.type = 'sawtooth'; o.frequency.value = 135;
-                g.gain.setValueAtTime(0.08, ctx.currentTime);
-            } else if (type === 'milestone') {
-                o.type = 'sine'; o.frequency.setValueAtTime(600, ctx.currentTime);
-                o.frequency.exponentialRampToValueAtTime(980, ctx.currentTime + 0.12);
-                g.gain.setValueAtTime(0.09, ctx.currentTime);
-            } else {
-                o.type = 'triangle'; o.frequency.value = 520 + Math.min(combo * 8, 320);
-                g.gain.setValueAtTime(0.05, ctx.currentTime);
+  <script>
+    // Konfigurasi Supabase Realtime
+    const SUPABASE_URL = "https://muekhvjcgnrudscgurjk.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_wOIxi1h4P2zAnBom5EzPYA_S1EAaPMg";
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const SENTENCES = [
+      "Kecepatan mengetik bukan hanya soal seberapa cepat jari bergerak, tetapi juga ketenangan pikiran dan akurasi di setiap huruf.",
+      "Dalam dunia pemrograman modern, kolaborasi waktu nyata memungkinkan dua pemain saling beradu kecepatan dari jarak ribuan kilometer.",
+      "Fokus pada kata di depan mata, jaga ritme napas tetap stabil, dan biarkan otot jari mengingat posisi setiap tombol secara alami.",
+      "Kemenangan sejati dalam arena ketik diraih oleh mereka yang mampu mempertahankan konsistensi tinggi tanpa panik saat tertinggal.",
+      "Teknologi web berbasis awan kini membuat pertukaran data berlangsung dalam hitungan milidetik tanpa hambatan server."
+    ];
+
+    const myId = "p_" + Math.random().toString(36).substring(2, 10);
+    let myName = "Pemain";
+    let enemyName = "Lawan";
+    let activeChannel = null;
+    let targetText = "";
+    let gameStarted = false;
+    let gameFinished = false;
+    let startTime = 0;
+    let streak = 0;
+    let myWpm = 0;
+    let enemyWpm = 0;
+    let isHost = false;
+
+    const screens = {
+      lobby: document.getElementById("lobbyScreen"),
+      waiting: document.getElementById("waitingScreen"),
+      arena: document.getElementById("arenaScreen"),
+      result: document.getElementById("resultScreen")
+    };
+
+    function showScreen(name) {
+      Object.values(screens).forEach(s => s.classList.remove("active"));
+      screens[name].classList.add("active");
+    }
+
+    function getPlayerName() {
+      const val = document.getElementById("playerName").value.trim();
+      return val || "Pemain_" + myId.slice(2, 6).toUpperCase();
+    }
+
+    async function leaveCurrentChannel() {
+      if (activeChannel) {
+        await sb.removeChannel(activeChannel);
+        activeChannel = null;
+      }
+    }
+
+    // 1. Quick Match via Supabase Presence
+    document.getElementById("btnQuickMatch").addEventListener("click", async () => {
+      myName = getPlayerName();
+      await leaveCurrentChannel();
+
+      document.getElementById("waitingTitle").textContent = "Mencari Lawan Publik...";
+      document.getElementById("waitingDesc").textContent = "Mencocokkan dengan pemain online lain...";
+      document.getElementById("roomCodeWrapper").style.display = "none";
+      showScreen("waiting");
+
+      const lobbyChannel = sb.channel("typearena-quickmatch", {
+        config: { presence: { key: myId } }
+      });
+
+      activeChannel = lobbyChannel;
+      const joinedAt = Date.now();
+
+      lobbyChannel
+        .on("presence", { event: "sync" }, () => {
+          const state = lobbyChannel.presenceState();
+          const players = Object.keys(state).map(k => state[k][0]).sort((a, b) => a.joinedAt - b.joinedAt);
+
+          if (players.length >= 2) {
+            const p1 = players[0];
+            const p2 = players[1];
+            if (p1.id === myId || p2.id === myId) {
+              const roomId = "qm_" + p1.id + "_" + p2.id;
+              const amHost = p1.id === myId;
+              const opponent = amHost ? p2.name : p1.name;
+              joinGameRoom(roomId, amHost, opponent);
             }
-            g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
-            o.connect(g); g.connect(ctx.destination);
-            o.start(); o.stop(ctx.currentTime + 0.12);
-        };
-
-        // Fungsi pemicu animasi getar & pop
-        function triggerJuice(isError, currentCombo) {
-            if (isError) {
-                txtWrap.classList.remove('animate-error-shake');
-                void txtWrap.offsetWidth;
-                txtWrap.classList.add('animate-error-shake');
-                feedbackHint.innerHTML = '<span class="text-rose-400 font-bold">⚠️ Typo! Perbaiki huruf merah</span>';
-            } else {
-                feedbackHint.innerText = 'Ketik secepat & seakurat mungkin';
-                // Angka combo membesar tiap ketikan benar
-                cmb.classList.remove('animate-combo-pop');
-                void cmb.offsetWidth;
-                cmb.classList.add('animate-combo-pop');
-
-                // Setiap kelipatan 10 combo -> Getar hentakan pada kartu utama + efek streak!
-                if (currentCombo > 0 && currentCombo % 10 === 0) {
-                    mainCard.classList.remove('animate-combo-thump');
-                    void mainCard.offsetWidth;
-                    mainCard.classList.add('animate-combo-thump');
-
-                    streakPopup.innerHTML = `<span class="float-streak inline-block">🔥 ${currentCombo}x STREAK!</span>`;
-                    playClick('milestone');
-                }
-            }
-        }
-
-        const cRoom = () => s.emit('createRoom', profile);
-        const jRoom = () => s.emit('joinRoom', { roomCode: rc.value, playerData: profile });
-        const startQuickMatch = () => s.emit('quickMatch', profile);
-        const cancelQuickMatch = () => { s.emit('cancelQuickMatch'); searchingBox.classList.add('hidden'); qmBtn.classList.remove('hidden'); };
-        const rdy = () => { rBtn.disabled = true; rBtn.innerText = '⏳ Menunggu lawan...'; rBtn.classList.add('opacity-60'); s.emit('playerReady'); };
-
-        s.on('searchingMatch', () => { qmBtn.classList.add('hidden'); searchingBox.classList.remove('hidden'); });
-        s.on('errorMsg', m => err.innerText = m);
-
-        s.on('roomUpdate', r => {
-            lobby.classList.add('hidden');
-            arena.classList.remove('hidden');
-            dCode.innerText = r.code;
-            st.innerText = Object.keys(r.players).length < 2 ? 'Menunggu 1 pemain...' : 'Lawan siap! Klik Ready';
-            draw(r.players);
+          }
+        })
+        .subscribe(async (status) => {
+          if (status === "SUBSCRIBED") {
+            await lobbyChannel.track({ id: myId, name: myName, joinedAt });
+          }
         });
+    });
 
-        const draw = pl => {
-            tracks.innerHTML = Object.values(pl).map(p => {
-                const me = p.id === s.id;
-                const rank = getRankInfo(p.mmr || 1000);
-                return `
-                <div class="bg-slate-800/70 p-3.5 rounded-2xl border ${me ? 'border-amber-500/40' : 'border-slate-700/60'}">
-                    <div class="flex justify-between items-center text-xs mb-2.5">
-                        <div class="flex items-center gap-2">
-                            <div class="w-7 h-7 rounded-lg bg-slate-900 flex items-center justify-center text-sm overflow-hidden border border-slate-700">
-                                ${renderAvatarHTML(p.avatar || '🦊')}
-                            </div>
-                            <div>
-                                <span class="font-bold ${me ? 'text-amber-400' : 'text-indigo-400'}">${p.name}${me ? ' (Kamu)' : ''}</span>
-                                <span class="ml-1 text-[10px] px-1.5 py-0.5 rounded ${rank.color} font-bold">${rank.title}</span>
-                                <div class="text-[10px] text-slate-400">Lv.${p.level || 1} • ${p.mmr || 1000} MMR</div>
-                            </div>
-                        </div>
-                        <span class="font-mono font-bold">${p.wpm} WPM • ${p.progress}% ${p.ready ? '✅' : '⏳'}</span>
-                    </div>
-                    <div class="relative w-full bg-slate-950 h-3 rounded-full overflow-visible">
-                        <div class="bar-smooth ${me ? 'bg-gradient-to-r from-amber-500 to-orange-400' : 'bg-gradient-to-r from-indigo-500 to-cyan-400'} h-3 rounded-full" style="width:${p.progress}%"></div>
-                        <span class="racer-smooth absolute -top-2.5 text-base" style="left:calc(${Math.min(p.progress, 95)}%)">${me ? '🏎️' : '🚙'}</span>
-                        <span class="absolute -top-2.5 right-0 text-sm">🏁</span>
-                    </div>
-                </div>`;
-            }).join('');
-        };
+    // 2. Buat Room Privat
+    document.getElementById("btnCreateRoom").addEventListener("click", () => {
+      myName = getPlayerName();
+      const code = Math.random().toString(36).substring(2, 6).toUpperCase();
+      document.getElementById("waitingTitle").textContent = "Menunggu Teman...";
+      document.getElementById("waitingDesc").textContent = "Pertandingan otomatis dimulai begitu teman bergabung.";
+      document.getElementById("roomCodeWrapper").style.display = "block";
+      document.getElementById("displayRoomCode").textContent = code;
+      showScreen("waiting");
+      joinGameRoom("room_" + code, true, null);
+    });
 
-        const renderText = (val) => {
-            let html = '';
-            for (let i = 0; i < target.length; i++) {
-                const ch = target[i];
-                if (i < val.length) {
-                    html += val[i] === target[i]
-                        ? `<span class="text-emerald-400">${ch}</span>`
-                        : `<span class="bg-rose-500/40 text-rose-200 rounded">${ch}</span>`;
-                } else {
-                    html += `<span class="text-slate-500" data-idx="${i}">${ch}</span>`;
-                }
-            }
-            txt.innerHTML = html;
-            const nextEl = txt.querySelector(`[data-idx="${val.length}"]`);
-            if (nextEl) {
-                caret.style.left = nextEl.offsetLeft + 'px';
-                caret.style.top = nextEl.offsetTop + 'px';
-            }
-        };
+    // 3. Gabung Room Privat
+    document.getElementById("btnJoinRoom").addEventListener("click", () => {
+      const code = document.getElementById("roomCodeInput").value.trim().toUpperCase();
+      if (!code) return alert("Masukkan kode room terlebih dahulu!");
+      myName = getPlayerName();
+      document.getElementById("waitingTitle").textContent = "Menghubungkan ke Room...";
+      document.getElementById("waitingDesc").textContent = "Menyiapkan arena duel...";
+      document.getElementById("roomCodeWrapper").style.display = "none";
+      showScreen("waiting");
+      joinGameRoom("room_" + code, false, null);
+    });
 
-        s.on('startCountdown', t => {
-            target = t;
-            rBtn.classList.add('hidden');
-            tBox.classList.remove('hidden');
-            renderText('');
-            let c = 3;
-            st.innerText = 'Mulai dalam ' + c + '...';
-            const iv = setInterval(() => {
-                c--;
-                if (c > 0) st.innerText = 'Mulai dalam ' + c + '...';
-                else clearInterval(iv);
-            }, 1000);
+    document.getElementById("btnCancelWait").addEventListener("click", async () => {
+      await leaveCurrentChannel();
+      showScreen("lobby");
+    });
+
+    document.getElementById("btnBackLobby").addEventListener("click", async () => {
+      await leaveCurrentChannel();
+      showScreen("lobby");
+    });
+
+    // Masuk ke Kanal Pertandingan Real-Time
+    async function joinGameRoom(roomTopic, hostFlag, knownEnemy) {
+      await leaveCurrentChannel();
+      isHost = hostFlag;
+      gameStarted = false;
+      gameFinished = false;
+      streak = 0;
+      myWpm = 0;
+      enemyWpm = 0;
+
+      const gameChannel = sb.channel(roomTopic, {
+        config: {
+          broadcast: { self: true },
+          presence: { key: myId }
+        }
+      });
+
+      activeChannel = gameChannel;
+
+      gameChannel
+        .on("presence", { event: "sync" }, () => {
+          const state = gameChannel.presenceState();
+          const ids = Object.keys(state);
+          if (ids.length >= 2 && isHost && !gameStarted) {
+            const enemyId = ids.find(id => id !== myId);
+            const eName = state[enemyId][0].name;
+            const chosenText = SENTENCES[Math.floor(Math.random() * SENTENCES.length)];
+
+            gameChannel.send({
+              type: "broadcast",
+              event: "start_match",
+              payload: {
+                text: chosenText,
+                hostName: myName,
+                guestName: eName
+              }
+            });
+          }
+        })
+        .on("broadcast", { event: "start_match" }, ({ payload }) => {
+          if (gameStarted) return;
+          gameStarted = true;
+          targetText = payload.text;
+          enemyName = isHost ? payload.guestName : payload.hostName;
+          setupArena();
+        })
+        .on("broadcast", { event: "progress" }, ({ payload }) => {
+          if (payload.sender === myId) return;
+          enemyWpm = payload.wpm;
+          document.getElementById("enemyProgress").style.width = payload.percent + "%";
+          document.getElementById("enemyStatsLabel").textContent = `${payload.wpm} WPM • ${payload.percent}%`;
+        })
+        .on("broadcast", { event: "attack" }, ({ payload }) => {
+          if (payload.sender === myId) return;
+          const display = document.getElementById("textDisplay");
+          display.classList.add("blinded");
+          setTimeout(() => display.classList.remove("blinded"), 2200);
+        })
+        .on("broadcast", { event: "finish" }, ({ payload }) => {
+          if (gameFinished) return;
+          gameFinished = true;
+          if (payload.sender === myId) {
+            myWpm = payload.wpm;
+            endGame(true);
+          } else {
+            enemyWpm = payload.wpm;
+            endGame(false);
+          }
+        })
+        .subscribe(async (status) => {
+          if (status === "SUBSCRIBED") {
+            await gameChannel.track({ id: myId, name: myName });
+          }
         });
+    }
 
-        s.on('raceStarted', () => {
-            st.innerText = '🔥 BALAPAN DIMULAI!';
-            inp.disabled = false;
-            inp.focus();
-            t0 = Date.now();
+    function setupArena() {
+      showScreen("arena");
+      document.getElementById("myNameLabel").textContent = myName + " (Kamu)";
+      document.getElementById("enemyNameLabel").textContent = enemyName;
+      document.getElementById("myProgress").style.width = "0%";
+      document.getElementById("enemyProgress").style.width = "0%";
+      document.getElementById("myStatsLabel").textContent = "0 WPM • 0%";
+      document.getElementById("enemyStatsLabel").textContent = "0 WPM • 0%";
+      document.getElementById("streakLabel").textContent = "Combo: 0/25";
+
+      const input = document.getElementById("typingInput");
+      input.value = "";
+      input.disabled = true;
+      renderText("");
+
+      let count = 3;
+      const cdEl = document.getElementById("countdownText");
+      cdEl.textContent = `Mulai dalam ${count}...`;
+
+      const timer = setInterval(() => {
+        count--;
+        if (count > 0) {
+          cdEl.textContent = `Mulai dalam ${count}...`;
+        } else {
+          clearInterval(timer);
+          cdEl.textContent = "🔥 KETIK SEKARANG!";
+          input.disabled = false;
+          input.focus();
+          startTime = Date.now();
+        }
+      }, 1000);
+    }
+
+    function renderText(typed) {
+      const display = document.getElementById("textDisplay");
+      let html = "";
+      for (let i = 0; i < targetText.length; i++) {
+        const ch = targetText[i];
+        if (i < typed.length) {
+          if (typed[i] === ch) {
+            html += `<span class="char-correct">${ch}</span>`;
+          } else {
+            html += `<span class="char-wrong">${ch}</span>`;
+          }
+        } else if (i === typed.length) {
+          html += `<span class="char-current">${ch}</span>`;
+        } else {
+          html += `<span>${ch}</span>`;
+        }
+      }
+      display.innerHTML = html;
+    }
+
+    document.getElementById("typingInput").addEventListener("input", (e) => {
+      if (gameFinished || !startTime) return;
+      const typed = e.target.value;
+      renderText(typed);
+
+      // Cek karakter terakhir untuk combo serangan
+      const lastIdx = typed.length - 1;
+      if (lastIdx >= 0 && typed[lastIdx] === targetText[lastIdx]) {
+        streak++;
+        if (streak >= 25) {
+          streak = 0;
+          activeChannel?.send({
+            type: "broadcast",
+            event: "attack",
+            payload: { sender: myId }
+          });
+        }
+      } else {
+        streak = 0;
+      }
+      document.getElementById("streakLabel").textContent = `Combo: ${streak}/25`;
+
+      // Hitung progres & WPM
+      let correctChars = 0;
+      for (let i = 0; i < typed.length; i++) {
+        if (typed[i] === targetText[i]) correctChars++;
+      }
+
+      const percent = Math.min(100, Math.round((correctChars / targetText.length) * 100));
+      const elapsedMin = Math.max((Date.now() - startTime) / 60000, 0.01);
+      myWpm = Math.round((correctChars / 5) / elapsedMin);
+
+      document.getElementById("myProgress").style.width = percent + "%";
+      document.getElementById("myStatsLabel").textContent = `${myWpm} WPM • ${percent}%`;
+
+      activeChannel?.send({
+        type: "broadcast",
+        event: "progress",
+        payload: { sender: myId, percent, wpm: myWpm }
+      });
+
+      // Cek selesai
+      if (typed === targetText) {
+        activeChannel?.send({
+          type: "broadcast",
+          event: "finish",
+          payload: { sender: myId, wpm: myWpm }
         });
+      }
+    });
 
-        inp.oninput = () => {
-            const val = inp.value;
-            renderText(val);
-            let ok = 0;
-            for (let i = 0; i < val.length; i++) {
-                if (val[i] === target[i]) ok++;
-                else break;
-            }
-            const hasErr = val.length > ok;
-            const isAddingChar = val.length > prevLen;
-            prevLen = val.length;
-
-            if (hasErr) {
-                combo = 0;
-                if (isAddingChar) {
-                    playClick('error');
-                    triggerJuice(true, 0);
-                }
-            } else if (isAddingChar) {
-                combo++;
-                if (combo % 10 !== 0) playClick('normal');
-                triggerJuice(false, combo);
-            }
-
-            cmb.innerText = combo + 'x';
-            const prog = Math.floor((ok / target.length) * 100);
-            const min = (Date.now() - t0) / 60000;
-            const wpm = min > 0 ? Math.round((ok / 5) / min) : 0;
-            s.emit('typingProgress', { progress: prog, wpm });
-        };
-
-        s.on('progressUpdate', draw);
-
-        s.on('raceFinished', resData => {
-            inp.disabled = true;
-            res.classList.remove('hidden');
-            const me = resData.find(x => x.id === s.id);
-            if (me) {
-                profile.mmr = Math.max(0, profile.mmr + me.mmrChange);
-                profile.xp += me.xpGained;
-                while (profile.xp >= profile.level * 200) {
-                    profile.xp -= profile.level * 200;
-                    profile.level++;
-                }
-                updateProfileUI();
-                rTitle.innerText = me.isWinner ? '🏆 KAMU MENANG!' : '💀 KALAH TIPIS!';
-                rRewards.innerText = `+${me.xpGained} XP  •  ${me.mmrChange > 0 ? '+' : ''}${me.mmrChange} MMR`;
-            }
-            rDet.innerHTML = resData.map(x => `<div>${x.isWinner ? '🥇 ' : '🥈 '}<b>${x.name}</b> — ${x.wpm} WPM</div>`).join('');
-        });
-
-        s.on('opponentLeft', () => {
-            alert('Lawan keluar dari pertandingan.');
-            location.reload();
-        });
-    </script>
+    function endGame(isWinner) {
+      document.getElementById("typingInput").disabled = true;
+      document.getElementById("resultTitle").textContent = isWinner ? "🏆 Kamu Menang!" : "💀 Kamu Kalah!";
+      document.getElementById("resultSubtitle").textContent = isWinner
+        ? `Kamu berhasil mengalahkan ${enemyName}!`
+        : `${enemyName} menyelesaikan kalimat lebih dulu.`;
+      document.getElementById("finalMyWpm").textContent = `${myWpm} WPM`;
+      document.getElementById("finalEnemyWpm").textContent = `${enemyWpm} WPM`;
+      showScreen("result");
+    }
+  </script>
 </body>
 </html>
